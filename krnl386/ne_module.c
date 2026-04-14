@@ -849,6 +849,22 @@ static BOOL NE_LoadDLLs( NE_MODULE *pModule )
     WORD *pModRef = (WORD *)((char *)pModule + pModule->ne_modtab);
     WORD *pDLLs = GlobalLock16( pModule->dlls_to_init );
 
+    /* Extract the directory of the importing module so we can retry
+     * loading a dependency from that same location when the normal
+     * search path fails.  Some programs ship private DLLs alongside
+     * their EXE in a directory that is not on the Win16 search path. */
+    char module_dir[MAX_PATH];
+    module_dir[0] = '\0';  /* empty means no extra directory to search */
+    if (pModule->fileinfo)
+    {
+        const OFSTRUCT *ofs = (const OFSTRUCT *)((const BYTE *)pModule + pModule->fileinfo);
+        lstrcpynA( module_dir, ofs->szPathName, sizeof(module_dir) );
+        char *last = strrchr( module_dir, '\\' );
+        if (!last) last = strrchr( module_dir, '/' );
+        if (last) *last = '\0';
+        else module_dir[0] = '\0';
+    }
+
     for (i = 0; i < pModule->ne_cmod; i++, pModRef++)
     {
         char buffer[260], *p;
@@ -884,12 +900,24 @@ static BOOL NE_LoadDLLs( NE_MODULE *pModule )
                     {
                         buf[0] = 0;
                         strcat(buffer, ".DLL");
+                        /* Also try with the .DLL extension explicitly */
+                        hDLL = MODULE_LoadModule16(buffer, TRUE, TRUE, NULL);
                     }
                 }
             }
             else
             {
                 hDLL = MODULE_LoadModule16(buffer, TRUE, TRUE, NULL);
+            }
+
+            /* If still not found, retry from the importing module's own directory.
+             * This handles programs that ship private DLLs next to their EXE. */
+            if (hDLL < 32 && module_dir[0])
+            {
+                char fullpath[MAX_PATH];
+                PathCombineA( fullpath, module_dir, buffer );
+                TRACE("Retrying '%s' from module dir '%s'\n", buffer, module_dir );
+                hDLL = MODULE_LoadModule16( fullpath, TRUE, TRUE, NULL );
             }
 
             if (hDLL < 32)

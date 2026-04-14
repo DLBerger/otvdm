@@ -5245,12 +5245,48 @@ BOOL16 WINAPI LPtoDP16( HDC16 hdc, LPPOINT16 points, INT16 count )
 }
 
 
+/* Lookup table for GetDCState16/SetDCState16 saved states.
+ * We use SaveDC/RestoreDC internally and return a fake HDC16 in the
+ * range 0xE000..0xEFFC (4-byte aligned, outside normal GDI handle range)
+ * so that SetDCState16 can find the right entry without going through the
+ * normal handle table.
+ */
+#define DC_STATE_BASE   0xE000
+#define DC_STATE_MAX    64
+
+static struct
+{
+    HDC  hdc32;
+    int  save_id;
+} dc_state_table[DC_STATE_MAX];
+
 /***********************************************************************
  *           GetDCState   (GDI.179)
  */
-HDC16 WINAPI GetDCState16( HDC16 hdc )
+HDC16 WINAPI GetDCState16( HDC16 hdc16 )
 {
-    ERR( "no longer supported\n" );
+    HDC hdc32 = HDC_32( hdc16 );
+    int i, save_id;
+
+    if (!hdc32) return 0;
+    save_id = SaveDC( hdc32 );
+    if (!save_id) return 0;
+
+    /* Find a free slot in the table */
+    for (i = 0; i < DC_STATE_MAX; i++)
+    {
+        if (!dc_state_table[i].save_id)
+        {
+            dc_state_table[i].hdc32   = hdc32;
+            dc_state_table[i].save_id = save_id;
+            TRACE( "hdc %04x -> state slot %d (save_id %d)\n", hdc16, i, save_id );
+            return (HDC16)(DC_STATE_BASE + i * 4);
+        }
+    }
+
+    /* Table full - undo the SaveDC and return failure */
+    WARN( "dc_state_table full, cannot save DC state for %04x\n", hdc16 );
+    RestoreDC( hdc32, save_id );
     return 0;
 }
 
@@ -5258,18 +5294,49 @@ HDC16 WINAPI GetDCState16( HDC16 hdc )
 /***********************************************************************
  *           SetDCState   (GDI.180)
  */
-void WINAPI SetDCState16( HDC16 hdc, HDC16 hdcs )
+void WINAPI SetDCState16( HDC16 hdc16, HDC16 hdcs )
 {
-    ERR( "no longer supported\n" );
+    int idx;
+
+    /* Check if hdcs is one of our fake state handles */
+    if (hdcs < DC_STATE_BASE || hdcs >= DC_STATE_BASE + DC_STATE_MAX * 4 ||
+        (hdcs - DC_STATE_BASE) % 4 != 0)
+    {
+        WARN( "SetDCState16: invalid state handle %04x for DC %04x\n", hdcs, hdc16 );
+        return;
+    }
+
+    idx = (hdcs - DC_STATE_BASE) / 4;
+    if (!dc_state_table[idx].save_id)
+    {
+        WARN( "SetDCState16: state slot %d already freed (hdcs %04x)\n", idx, hdcs );
+        return;
+    }
+
+    TRACE( "hdc %04x restoring state slot %d (save_id %d)\n",
+           hdc16, idx, dc_state_table[idx].save_id );
+    RestoreDC( dc_state_table[idx].hdc32, dc_state_table[idx].save_id );
+    dc_state_table[idx].hdc32   = NULL;
+    dc_state_table[idx].save_id = 0;
 }
 
 /***********************************************************************
  *           SetDCOrg   (GDI.117)
+ *
+ * On Win16 this set the absolute device origin for the DC.  The Win32
+ * GDI model doesn't expose a public API to change the device origin, so
+ * we just return the current origin and warn if a real change is requested.
  */
 DWORD WINAPI SetDCOrg16( HDC16 hdc16, INT16 x, INT16 y )
 {
-    FIXME( "%04x %d,%d no longer supported\n", hdc16, x, y );
-    return 0;
+    POINT pt;
+    HDC hdc32 = HDC_32( hdc16 );
+
+    if (!GetDCOrgEx( hdc32, &pt )) return 0;
+    if (x != (INT16)pt.x || y != (INT16)pt.y)
+        WARN( "%04x: SetDCOrg(%d,%d) requested but device origin cannot be changed on Win32\n",
+              hdc16, x, y );
+    return MAKELONG( pt.x, pt.y );
 }
 
 
@@ -5288,50 +5355,116 @@ HRGN16 WINAPI InquireVisRgn16( HDC16 hdc )
 
 /***********************************************************************
  *           OffsetVisRgn    (GDI.102)
+ *
+ * Approximated via the clip region: on Win16 the "visible region" was a
+ * GDI-internal region; offsetting the clip region achieves the same
+ * visual effect for the drawing operations that use it.
  */
 INT16 WINAPI OffsetVisRgn16( HDC16 hdc16, INT16 x, INT16 y )
 {
-    FIXME( "%04x %d,%d no longer supported\n", hdc16, x, y );
-    return ERROR;
+    return OffsetClipRgn( HDC_32(hdc16), x, y );
 }
 
 
 /***********************************************************************
  *           ExcludeVisRect   (GDI.73)
+ *
+ * Approximated via ExcludeClipRect so that drawing is clipped away
+ * from the excluded rectangle, matching Win16 visible-region semantics.
  */
 INT16 WINAPI ExcludeVisRect16( HDC16 hdc16, INT16 left, INT16 top, INT16 right, INT16 bottom )
 {
-    FIXME( "%04x %d,%d-%d,%d no longer supported\n", hdc16, left, top, right, bottom );
-    return ERROR;
+    return ExcludeClipRect( HDC_32(hdc16), left, top, right, bottom );
 }
 
 
 /***********************************************************************
  *           IntersectVisRect   (GDI.98)
+ *
+ * Approximated via IntersectClipRect so that drawing is restricted to
+ * the intersection rectangle, matching Win16 visible-region semantics.
  */
 INT16 WINAPI IntersectVisRect16( HDC16 hdc16, INT16 left, INT16 top, INT16 right, INT16 bottom )
 {
-    FIXME( "%04x %d,%d-%d,%d no longer supported\n", hdc16, left, top, right, bottom );
-    return ERROR;
+    return IntersectClipRect( HDC_32(hdc16), left, top, right, bottom );
 }
 
 
 /***********************************************************************
  *           SaveVisRgn   (GDI.129)
+ *
+ * Saves the current clip region for this DC onto a per-DC stack so that
+ * RestoreVisRgn16 can restore it.  The current clip region is obtained
+ * via GetClipRgn; if the DC has no clip region we store a sentinel NULL
+ * entry so RestoreVisRgn16 knows to clear the clip region on restore.
+ *
+ * The returned HRGN16 is the saved region handle (informational, as in
+ * the original Win16 API).
  */
 HRGN16 WINAPI SaveVisRgn16( HDC16 hdc16 )
 {
-    FIXME( "%04x no longer supported\n", hdc16 );
-    return 0;
+    HDC  hdc32 = HDC_32( hdc16 );
+    HRGN hrgn;
+    struct saved_visrgn *saved;
+
+    if (!hdc32) return 0;
+
+    /* Allocate a region to hold the current clip region */
+    hrgn = CreateRectRgn( 0, 0, 0, 0 );
+    if (!hrgn) return 0;
+
+    if (GetClipRgn( hdc32, hrgn ) != 1)
+    {
+        /* DC has no clip region — store a NULL-sentinel entry */
+        DeleteObject( hrgn );
+        hrgn = NULL;
+    }
+
+    saved = HeapAlloc( GetProcessHeap(), 0, sizeof(*saved) );
+    if (!saved)
+    {
+        if (hrgn) DeleteObject( hrgn );
+        return 0;
+    }
+    saved->hdc  = hdc32;
+    saved->hrgn = hrgn;   /* NULL means "no clip region" */
+    list_add_head( &saved_regions, &saved->entry );
+
+    TRACE( "hdc %04x saved clip region %p\n", hdc16, hrgn );
+    return hrgn ? HRGN_16( hrgn ) : 0;
 }
 
 
 /***********************************************************************
  *           RestoreVisRgn   (GDI.130)
+ *
+ * Pops the most recently saved clip region for this DC off the stack
+ * (placed there by SaveVisRgn16) and re-installs it.
  */
 INT16 WINAPI RestoreVisRgn16( HDC16 hdc16 )
 {
-    FIXME( "%04x no longer supported\n", hdc16 );
+    HDC  hdc32 = HDC_32( hdc16 );
+    struct saved_visrgn *saved;
+
+    if (!hdc32) return ERROR;
+
+    /* Find the most-recently saved entry for this DC */
+    LIST_FOR_EACH_ENTRY( saved, &saved_regions, struct saved_visrgn, entry )
+    {
+        if (saved->hdc != hdc32) continue;
+
+        list_remove( &saved->entry );
+
+        /* NULL hrgn means the original DC had no clip region */
+        SelectClipRgn( hdc32, saved->hrgn );
+        if (saved->hrgn) DeleteObject( saved->hrgn );
+
+        HeapFree( GetProcessHeap(), 0, saved );
+        TRACE( "hdc %04x restored clip region\n", hdc16 );
+        return SIMPLEREGION;
+    }
+
+    WARN( "RestoreVisRgn16: no saved region for hdc %04x\n", hdc16 );
     return ERROR;
 }
 
