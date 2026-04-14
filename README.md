@@ -48,16 +48,17 @@ make
 
 ## Optional VM backend CMake options
 
-By default, the optional hypervisor backends (HAXM, GVM, WHPX) are **disabled**.
-You can enable them individually if you have the necessary drivers and headers:
+The optional hypervisor backends (HAXM, GVM, WHPX) are **enabled by default** to
+match the original build behaviour. You can disable any of them individually if
+you don't have the required drivers/headers (e.g. on MSYS2/MinGW):
 
 | Option | Default | Description |
 |---|---|---|
-| `-DENABLE_HAXMVM=OFF` | OFF | HAXM (Intel Hardware Accelerated Execution Manager) backend |
-| `-DENABLE_GVM=OFF` | OFF | GVM (Google Virtual Machine) backend |
-| `-DENABLE_WHPXVM=OFF` | OFF | Windows Hypervisor Platform (WHPX) backend |
+| `-DENABLE_HAXMVM=ON` | ON | HAXM (Intel Hardware Accelerated Execution Manager) backend |
+| `-DENABLE_GVM=ON` | ON | GVM (Google Virtual Machine) backend |
+| `-DENABLE_WHPXVM=ON` | ON | Windows Hypervisor Platform (WHPX) backend |
 
-### Build without optional backends (recommended for MSYS2/MinGW)
+### Build without optional backends (e.g. MSYS2/MinGW without Windows SDK)
 
 ```sh
 cmake -G Ninja .. \
@@ -68,21 +69,18 @@ cmake -G Ninja .. \
 ninja
 ```
 
-### Build with all optional backends
+### Build with all optional backends (default)
 
 ```sh
 cmake -G Ninja .. \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DENABLE_HAXMVM=ON \
-  -DENABLE_GVM=ON \
-  -DENABLE_WHPXVM=ON
+  -DCMAKE_BUILD_TYPE=Release
 ninja
 ```
 
 > **Note for MSYS2/MinGW users:** The optional backends may not compile with
 > MinGW toolchains due to missing Windows SDK headers (e.g. `WHV_*` types for
-> WHPX, or pointer/integer ABI differences for HAXM/GVM). Leave them OFF for a
-> working build.
+> WHPX, or pointer/integer ABI differences for HAXM/GVM). Pass the `OFF` flags
+> above for a working build.
 
 # How does it work?
 

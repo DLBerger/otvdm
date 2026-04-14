@@ -51,9 +51,9 @@ WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_custom_target(generate_ifs_${name_we} DEPENDS ${file_c} ${file_h})
 endmacro()
 
-option(ENABLE_HAXMVM "Build the HAXM hypervisor backend (haxmvm)" OFF)
-option(ENABLE_GVM "Build the GVM hypervisor backend (gvm)" OFF)
-option(ENABLE_WHPXVM "Build the Windows Hypervisor Platform backend (whpxvm)" OFF)
+option(ENABLE_HAXMVM "Build the HAXM hypervisor backend (haxmvm)" ON)
+option(ENABLE_GVM "Build the GVM hypervisor backend (gvm)" ON)
+option(ENABLE_WHPXVM "Build the Windows Hypervisor Platform backend (whpxvm)" ON)
 
 set(HAVE_WINHVPLATFORM_H OFF)
 set(HAVE_WHPX_TYPES OFF)
