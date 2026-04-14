@@ -52,11 +52,11 @@ The optional hypervisor backends (HAXM, GVM, WHPX) are **enabled by default** to
 match the original build behaviour. You can disable any of them individually if
 you don't have the required drivers/headers (e.g. on MSYS2/MinGW):
 
-| Option | Default | Description |
-|---|---|---|
-| `-DENABLE_HAXMVM=ON` | ON | HAXM (Intel Hardware Accelerated Execution Manager) backend |
-| `-DENABLE_GVM=ON` | ON | GVM (Google Virtual Machine) backend |
-| `-DENABLE_WHPXVM=ON` | ON | Windows Hypervisor Platform (WHPX) backend |
+| Option               | Default | Description                                                  |
+|----------------------|---------|--------------------------------------------------------------|
+| `-DENABLE_HAXMVM=ON` | enabled | HAXM (Intel Hardware Accelerated Execution Manager) backend  |
+| `-DENABLE_GVM=ON`    | enabled | GVM (Google Virtual Machine) backend                         |
+| `-DENABLE_WHPXVM=ON` | enabled | Windows Hypervisor Platform (WHPX) backend                   |
 
 ### Build without optional backends (e.g. MSYS2/MinGW without Windows SDK)
 
