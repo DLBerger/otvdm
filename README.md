@@ -82,6 +82,28 @@ ninja
 > WHPX, or pointer/integer ABI differences for HAXM/GVM). Pass the `OFF` flags
 > above for a working build.
 
+# Build with MSYS UCRT32
++ Install MSYS2
++ Open MSYS2 UCRT32 shell
++ Install tooling:
+    pacman -Syu
+    pacman --noconfirm --needed -S \
+      mingw-w64-i686-toolchain \
+      mingw-w64-i686-cmake \
+      mingw-w64-i686-ninja \
+      flex \
+      bison
++ Setup your build environment:
+    Debug:
+      cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOTVDM_ENABLE_HAXMVM=OFF -DOTVDM_ENABLE_GVM=OFF -DOTVDM_ENABLE_WHPXVM=OFF
+      cmake --build build-debug
+    RelWithDebInfo:
+      cmake -S . -B build-relwithdebinfo -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOTVDM_ENABLE_HAXMVM=OFF -DOTVDM_ENABLE_GVM=OFF -DOTVDM_ENABLE_WHPXVM=OFF
+      cmake --build build-relwithdebinfo
+    Release:
+      cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTVDM_ENABLE_HAXMVM=OFF -DOTVDM_ENABLE_GVM=OFF -DOTVDM_ENABLE_WHPXVM=OFF
+      cmake --build build
+
 # How does it work?
 
 This program contains the following items
