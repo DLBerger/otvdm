@@ -51,8 +51,29 @@ WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     add_custom_target(generate_ifs_${name_we} DEPENDS ${file_c} ${file_h})
 endmacro()
 
-INCLUDE(CheckIncludeFiles)
-CHECK_INCLUDE_FILES(WinHvPlatform.h HAVE_WINHVPLATFORM_H)
+option(ENABLE_HAXMVM "Build the HAXM hypervisor backend (haxmvm)" ON)
+option(ENABLE_GVM "Build the GVM hypervisor backend (gvm)" ON)
+option(ENABLE_WHPXVM "Build the Windows Hypervisor Platform backend (whpxvm)" ON)
+
+set(HAVE_WINHVPLATFORM_H OFF)
+set(HAVE_WHPX_TYPES OFF)
+if (ENABLE_WHPXVM)
+    INCLUDE(CheckIncludeFiles)
+    INCLUDE(CheckCSourceCompiles)
+    CHECK_INCLUDE_FILES(WinHvPlatform.h HAVE_WINHVPLATFORM_H)
+    if (HAVE_WINHVPLATFORM_H)
+        check_c_source_compiles("
+#include <windows.h>
+#include <WinHvPlatform.h>
+int main(void) {
+    WHV_REGISTER_VALUE val;
+    WHV_REGISTER_NAME name;
+    (void)val; (void)name;
+    return 0;
+}
+" HAVE_WHPX_TYPES)
+    endif()
+endif()
 
 include_directories(BEFORE wow32)
 find_package(BISON)
@@ -78,7 +99,9 @@ add_subdirectory(ctl3dv2)
 add_subdirectory(ddeml)
 add_subdirectory(dispdib)
 add_subdirectory(display)
-add_subdirectory(haxmvm)
+if (ENABLE_HAXMVM)
+  add_subdirectory(haxmvm)
+endif()
 add_subdirectory(keyboard)
 add_subdirectory(lzexpand)
 add_subdirectory(mmsystem)
@@ -113,8 +136,10 @@ add_subdirectory(winsock)
 add_subdirectory(winspool)
 add_subdirectory(wpp)
 add_subdirectory(otvdm)
-add_subdirectory(gvm)
+if (ENABLE_GVM)
+  add_subdirectory(gvm)
+endif()
 add_subdirectory(ntvdm)
-if (HAVE_WINHVPLATFORM_H)
+if (ENABLE_WHPXVM AND HAVE_WINHVPLATFORM_H AND HAVE_WHPX_TYPES)
   add_subdirectory(whpxvm)
 endif()
