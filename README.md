@@ -31,7 +31,13 @@ See [otvdm.ini](otvdm.ini).
 
 # How to compile(Visual Studio)
 
-+ Install Visual Studio 2017
++ Install Visual Studio 2017 or later
++ Install WinFlexBison.win_flex_bison with winget
++ winget install msys2.msys2
++   Open MSYS2 MSYS shell and install the 32-bit version of as, bison, and flex with
+      pacman -Syu
+      <you may need to reopen MSYS2 MSYS after the previous command>
+      pacman -S --needed mingw-w64-i686-binutils bison flex
 + Edit PropertySheet.props
 + Compile
 
@@ -58,51 +64,16 @@ you don't have the required drivers/headers (e.g. on MSYS2/MinGW):
 | `-DENABLE_GVM=ON`    | enabled | GVM (Google Virtual Machine) backend                         |
 | `-DENABLE_WHPXVM=ON` | enabled | Windows Hypervisor Platform (WHPX) backend                   |
 
-### Build without optional backends (e.g. MSYS2/MinGW without Windows SDK)
-
-```sh
-cmake -G Ninja .. \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DENABLE_HAXMVM=OFF \
-  -DENABLE_GVM=OFF \
-  -DENABLE_WHPXVM=OFF
-ninja
-```
-
-### Build with all optional backends (default)
-
-```sh
-cmake -G Ninja .. \
-  -DCMAKE_BUILD_TYPE=Release
-ninja
-```
-
-> **Note for MSYS2/MinGW users:** The optional backends may not compile with
-> MinGW toolchains due to missing Windows SDK headers (e.g. `WHV_*` types for
-> WHPX, or pointer/integer ABI differences for HAXM/GVM). Pass the `OFF` flags
-> above for a working build.
-
-# Build with MSYS UCRT32
-+ Install MSYS2
-+ Open MSYS2 UCRT32 shell
-+ Install tooling:
-    pacman -Syu
-    pacman --noconfirm --needed -S \
-      mingw-w64-i686-toolchain \
-      mingw-w64-i686-cmake \
-      mingw-w64-i686-ninja \
-      flex \
-      bison
 + Setup your build environment:
     Debug:
-      cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOTVDM_ENABLE_HAXMVM=OFF -DOTVDM_ENABLE_GVM=OFF -DOTVDM_ENABLE_WHPXVM=OFF
-      cmake --build build-debug
+      cmake -S . -B build-debug -G "Visual Studio 17 2022" -A Win32
+      cmake --build build-debug --config Debug
     RelWithDebInfo:
-      cmake -S . -B build-relwithdebinfo -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DOTVDM_ENABLE_HAXMVM=OFF -DOTVDM_ENABLE_GVM=OFF -DOTVDM_ENABLE_WHPXVM=OFF
-      cmake --build build-relwithdebinfo
+      cmake -S . -B build-relwithdebinfo -G "Visual Studio 17 2022" -A Win32
+      cmake --build build-relwithdebinfo --config RelWithDebInfo
     Release:
-      cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOTVDM_ENABLE_HAXMVM=OFF -DOTVDM_ENABLE_GVM=OFF -DOTVDM_ENABLE_WHPXVM=OFF
-      cmake --build build
+      cmake -S . -B build -G "Visual Studio 17 2022" -A Win32
+      cmake --build build --config Release
 
 # How does it work?
 
