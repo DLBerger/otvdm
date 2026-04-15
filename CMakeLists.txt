@@ -1,6 +1,113 @@
 cmake_minimum_required(VERSION 3.10.2)
+
+# ===========================================================================
+# MSVC / cl.exe COMPILER SELECTION
+# ===========================================================================
+#
+# CMake must know about the compiler BEFORE the project() call.  If CMake is
+# skipping your installed cl.exe (a common symptom when the VS environment is
+# not active in the current shell), use one of the approaches below.
+#
+# --- Recommended: launch from a Visual Studio Developer Command Prompt -------
+#   In VS 2022 this is under:
+#     Start → Visual Studio 2022 → x86 Native Tools Command Prompt for VS 2022
+#   Then run CMake normally:
+#     cmake -G "Visual Studio 17 2022" -A Win32 -S . -B build
+#
+# --- From a plain PowerShell window ------------------------------------------
+#   Option A – specify the compiler path explicitly:
+#     cmake -DCMAKE_C_COMPILER="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.xx.xxxxx/bin/Hostx64/x86/cl.exe" ^
+#           -DCMAKE_CXX_COMPILER="..." -G "NMake Makefiles" -S . -B build
+#
+#   Option B – import the VS environment in PowerShell first, then run cmake:
+#     $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+#     $vsInstall = & $vsWhere -latest -property installationPath
+#     Import-Module "$vsInstall\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+#     Enter-VsDevShell -VsInstallPath $vsInstall -SkipAutomaticLocation -Arch x86
+#     cmake -G "Visual Studio 17 2022" -A Win32 -S . -B build
+#
+#   Option C – set WINEVDM_CL_EXECUTABLE in the cache (see option below).
+#
+# ---------------------------------------------------------------------------
+# WINEVDM_CL_EXECUTABLE  (optional, default empty)
+#
+# Full path to the cl.exe you want CMake to use.  When set, this overrides
+# both CMAKE_C_COMPILER and CMAKE_CXX_COMPILER before the project() call so
+# CMake cannot accidentally pick a different compiler.
+#
+# Example (PowerShell, single line):
+#   cmake -DWINEVDM_CL_EXECUTABLE="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.40.33807/bin/Hostx64/x86/cl.exe" -S . -B build
+# ---------------------------------------------------------------------------
+set(WINEVDM_CL_EXECUTABLE "" CACHE FILEPATH
+    "Optional: explicit path to cl.exe to use for C and C++ compilation")
+
+if (WINEVDM_CL_EXECUTABLE)
+    # Validate the path before handing it to project().
+    if (NOT EXISTS "${WINEVDM_CL_EXECUTABLE}")
+        message(FATAL_ERROR
+            "WINEVDM_CL_EXECUTABLE is set to '${WINEVDM_CL_EXECUTABLE}' "
+            "but that file does not exist.  Please verify the path and "
+            "re-run cmake.")
+    endif()
+    # Set both C and CXX compilers to the same cl.exe; CMake infers CXX from
+    # cl.exe automatically when both are the same path.
+    set(CMAKE_C_COMPILER   "${WINEVDM_CL_EXECUTABLE}" CACHE FILEPATH
+        "C compiler forced by WINEVDM_CL_EXECUTABLE" FORCE)
+    set(CMAKE_CXX_COMPILER "${WINEVDM_CL_EXECUTABLE}" CACHE FILEPATH
+        "C++ compiler forced by WINEVDM_CL_EXECUTABLE" FORCE)
+    message(STATUS "winevdm: compiler forced via WINEVDM_CL_EXECUTABLE -> ${WINEVDM_CL_EXECUTABLE}")
+endif()
+
+# If no compiler has been specified and we are on Windows, try to locate
+# cl.exe via vswhere so the user gets an actionable error instead of a
+# cryptic generator failure.
+if (WIN32 AND NOT CMAKE_C_COMPILER AND NOT WINEVDM_CL_EXECUTABLE)
+    # vswhere is installed alongside every Visual Studio 2017+ instance.
+    find_program(_WINEVDM_VSWHERE
+        NAMES vswhere
+        PATHS
+            "$ENV{ProgramFiles(x86)}/Microsoft Visual Studio/Installer"
+            "$ENV{ProgramFiles}/Microsoft Visual Studio/Installer"
+        NO_DEFAULT_PATH)
+
+    if (_WINEVDM_VSWHERE)
+        # Ask vswhere for the latest VS installation path.
+        execute_process(
+            COMMAND "${_WINEVDM_VSWHERE}" -latest -property installationPath
+            OUTPUT_VARIABLE _WINEVDM_VS_ROOT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        if (_WINEVDM_VS_ROOT)
+            message(STATUS "winevdm: vswhere found VS at '${_WINEVDM_VS_ROOT}'")
+            message(STATUS "winevdm: To use cl.exe from this installation, "
+                "either open a VS Developer Command Prompt or set "
+                "-DWINEVDM_CL_EXECUTABLE=<full path to cl.exe>")
+        endif()
+    else()
+        message(STATUS "winevdm: vswhere not found – cannot auto-detect cl.exe location")
+        message(STATUS "winevdm: If CMake is skipping your installed cl.exe, "
+            "try opening a 'x86 Native Tools Command Prompt for VS 20xx' "
+            "before running cmake, or set -DWINEVDM_CL_EXECUTABLE=<path>")
+    endif()
+endif()
+
 #-Dinline=__inline
 project(winevdm)
+
+# ---------------------------------------------------------------------------
+# Report the compiler CMake selected so problems are easy to spot.
+# ---------------------------------------------------------------------------
+if (MSVC)
+    message(STATUS "winevdm: C   compiler : ${CMAKE_C_COMPILER}")
+    message(STATUS "winevdm: CXX compiler : ${CMAKE_CXX_COMPILER}")
+    message(STATUS "winevdm: MSVC version : ${MSVC_VERSION}  (toolset ${MSVC_TOOLSET_VERSION})")
+elseif (WIN32)
+    message(WARNING
+        "winevdm: Building on Windows but MSVC was NOT detected.  "
+        "The build may fail.  Detected C compiler: ${CMAKE_C_COMPILER}.  "
+        "See the top of CMakeLists.txt for how to select cl.exe.")
+endif() # compiler report
+
 set(ASM_TOOL_DIR )
 
 # ---------------------------------------------------------------------------
@@ -235,6 +342,75 @@ else()
         # message, not a compiler code-analysis warning.  To eliminate D9025
         # entirely, ensure no target passes both /W<n> and /w on the same
         # compilation unit.  For now it is documented here for reference.
+
+        # --- Additional suppressions for remaining noise (batch 2) -----------
+
+        # C4100: unreferenced formal parameter – extremely common in Wine's
+        # callback and handler functions where parameters are required by the
+        # Windows API signature but not used in every code path.
+        add_compile_options(/wd4100)
+
+        # C4189: local variable is initialized but not referenced – occurs in
+        # Wine debug/trace macros that initialize a variable only when a certain
+        # TRACE/FIXME debug channel is active; the variable is optimised out in
+        # non-debug builds.
+        add_compile_options(/wd4189)
+
+        # C4200: nonstandard extension used: zero-sized array in struct/union –
+        # Wine and many Win32 SDK headers use flexible array members in the older
+        # zero-length array idiom (e.g., BYTE data[0]) which is a MSVC extension.
+        add_compile_options(/wd4200)
+
+        # C4201: nonstandard extension used: nameless struct/union – pervasive in
+        # Windows SDK and Wine headers (LARGE_INTEGER, POINT, RECT unions, etc.).
+        add_compile_options(/wd4201)
+
+        # C4204: nonstandard extension used: non-constant aggregate initializer –
+        # Wine C code uses struct initializers with non-constant expressions which
+        # are a GCC/Clang extension accepted by MSVC as an extension.
+        add_compile_options(/wd4204)
+
+        # C4210: nonstandard extension used: function given file scope – some
+        # Wine headers forward-declare static functions at file scope in a way
+        # that MSVC flags as a language extension; the behaviour is correct.
+        add_compile_options(/wd4210)
+
+        # C4211: nonstandard extension used: redefined extern to static – Wine
+        # source files sometimes declare a symbol extern in a header then define
+        # it static in the .c file; accepted MSVC extension, no runtime impact.
+        add_compile_options(/wd4211)
+
+        # C4214: nonstandard extension used: bit field types other than int –
+        # Wine uses char/short/BYTE bit-field members in protocol and hardware
+        # register structs; a GCC extension accepted by MSVC.
+        add_compile_options(/wd4214)
+
+        # C4312: conversion from 'type1' to 'type2' of greater size – common
+        # when Wine casts a 32-bit HANDLE/HWND to a 64-bit pointer type on a
+        # 64-bit host; the cast is intentional for 32-bit Wine compatibility.
+        add_compile_options(/wd4312)
+
+        # C4390: empty controlled statement found – some Wine guard macros expand
+        # to nothing under certain #ifdef configurations leaving an empty if/for
+        # body; harmless and intentional in the macro design.
+        add_compile_options(/wd4390)
+
+        # C4703: potentially uninitialized local pointer variable used – a more
+        # conservative cousin of C4700 that fires on pointer variables; the same
+        # rationale as C4700 applies (legacy Wine paths, guarded by early exits).
+        # *** RISK: same UB caveat as C4700; fix individually where feasible. ***
+        add_compile_options(/wd4703)
+
+        # C4706: assignment within conditional expression – Wine and legacy C code
+        # idioms use "if ((x = expr) != 0)" intentionally; MSVC warns by default.
+        add_compile_options(/wd4706)
+
+        # C4996 (specific case): 'strncat'/'strncpy' could be unsafe when the
+        # buffer size argument is derived from sizeof – MSVC issues this variant
+        # even when _CRT_SECURE_NO_WARNINGS is set in some SDK versions; the /wd
+        # flag ensures it is always silenced regardless of SDK version.
+        add_compile_options(/wd4996)
+
     endif() # WINEVDM_SUPPRESS_MSVC_WARNINGS
 endif()
 
