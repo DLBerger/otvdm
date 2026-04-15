@@ -16,7 +16,7 @@ cmake_minimum_required(VERSION 3.10.2)
 #
 # --- From a plain PowerShell window ------------------------------------------
 #   Option A – specify the compiler path explicitly:
-#     cmake -DCMAKE_C_COMPILER="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.xx.xxxxx/bin/Hostx64/x86/cl.exe" ^
+#     cmake -DCMAKE_C_COMPILER="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.xx.xxxxx/bin/Hostx64/x86/cl.exe" `
 #           -DCMAKE_CXX_COMPILER="..." -G "NMake Makefiles" -S . -B build
 #
 #   Option B – import the VS environment in PowerShell first, then run cmake:
