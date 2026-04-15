@@ -7,6 +7,38 @@ if (NOT(MSVC))
     string(APPEND CMAKE_CXX_FLAGS " -Wno-narrowing ")
 else()
     add_definitions(-DUSE_COMPILER_EXCEPTIONS -Dinline=__inline)
+
+    # Suppress C4996: deprecated/unsafe CRT function warnings (strcpy, strcat, sprintf,
+    # fopen, strtok, getenv, etc.).  This project uses legacy Wine/DOS C code that
+    # intentionally calls these functions; suppressing at the definition level is safe here.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+
+    # Suppress POSIX-name deprecation warnings (open, close, read, write, unlink,
+    # stricmp, wcsicmp, getpid, etc.) that MSVC raises via its secure-CRT layer.
+    add_compile_definitions(_CRT_NONSTDC_NO_DEPRECATE)
+
+    # C4273: inconsistent dll linkage – triggered by strnlen in wine/wine/port.h and
+    # by wine_ldt_copy; these are intentional Wine compatibility shims and safe to ignore.
+    add_compile_options(/wd4273)
+
+    # C4244 / C4267: conversion from a larger integer type to a smaller one (e.g.
+    # size_t→int, DWORD→WORD).  These are pervasive in the legacy Wine/DOS-emulation
+    # arithmetic and are safe given the 16-/32-bit context of this project.
+    add_compile_options(/wd4244 /wd4267)
+
+    # C4018: signed/unsigned mismatch in comparisons; common in legacy C code that
+    # mixes plain int and DWORD/size_t loop variables.
+    add_compile_options(/wd4018)
+
+    # C4146: unary minus applied to an unsigned type; appears in Wine bit-manipulation
+    # helpers where the pattern is intentional.
+    add_compile_options(/wd4146)
+
+    # LNK4217: symbol defined in one object file is imported by another object within
+    # the same link unit.  Harmless in this project's DLL-per-subsystem layout where
+    # many small DLLs share Wine helper symbols.
+    string(APPEND CMAKE_SHARED_LINKER_FLAGS " /ignore:4217")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS   " /ignore:4217")
 endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
