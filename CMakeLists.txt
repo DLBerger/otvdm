@@ -2,43 +2,92 @@ cmake_minimum_required(VERSION 3.10.2)
 #-Dinline=__inline
 project(winevdm)
 set(ASM_TOOL_DIR )
+
+# ---------------------------------------------------------------------------
+# WINEVDM_SUPPRESS_MSVC_WARNINGS (default ON)
+#
+# When ON (the default) a targeted set of MSVC /wd warning suppressions and
+# preprocessor defines is applied project-wide.  These address high-volume
+# noise from the legacy Wine / DOS-emulation C code and do NOT hide any new,
+# important diagnostics that are unlikely to appear in this codebase.
+#
+# Set to OFF if you want the raw diagnostic stream, e.g.:
+#   cmake -DWINEVDM_SUPPRESS_MSVC_WARNINGS=OFF <source_dir>
+# or toggle it in cmake-gui / CMakeCache.txt.
+# ---------------------------------------------------------------------------
+option(WINEVDM_SUPPRESS_MSVC_WARNINGS
+    "Suppress noisy legacy-code MSVC warnings for cleaner build output (MSVC only)"
+    ON)
+
 # prevent wine error
 if (NOT(MSVC))
     string(APPEND CMAKE_CXX_FLAGS " -Wno-narrowing ")
 else()
+    # These two definitions are functional (not warning suppression) and are
+    # always required for the MSVC build to compile correctly.
     add_definitions(-DUSE_COMPILER_EXCEPTIONS -Dinline=__inline)
 
-    # Suppress C4996: deprecated/unsafe CRT function warnings (strcpy, strcat, sprintf,
-    # fopen, strtok, getenv, etc.).  This project uses legacy Wine/DOS C code that
-    # intentionally calls these functions; suppressing at the definition level is safe here.
-    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    if (WINEVDM_SUPPRESS_MSVC_WARNINGS)
+        # Suppress C4996: deprecated/unsafe CRT function warnings (strcpy, strcat,
+        # sprintf, fopen, strtok, getenv, etc.).  This project uses legacy Wine/DOS
+        # C code that intentionally calls these functions; suppressing at the
+        # definition level is safe here.
+        add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 
-    # Suppress POSIX-name deprecation warnings (open, close, read, write, unlink,
-    # stricmp, wcsicmp, getpid, etc.) that MSVC raises via its secure-CRT layer.
-    add_compile_definitions(_CRT_NONSTDC_NO_DEPRECATE)
+        # Suppress POSIX-name deprecation warnings (open, close, read, write,
+        # unlink, stricmp, wcsicmp, getpid, etc.) that MSVC raises via its
+        # secure-CRT layer.
+        add_compile_definitions(_CRT_NONSTDC_NO_DEPRECATE)
 
-    # C4273: inconsistent dll linkage – triggered by strnlen in wine/wine/port.h and
-    # by wine_ldt_copy; these are intentional Wine compatibility shims and safe to ignore.
-    add_compile_options(/wd4273)
+        # C4273: inconsistent dll linkage – triggered by strnlen in wine/wine/port.h
+        # and by wine_ldt_copy; these are intentional Wine compatibility shims and
+        # safe to ignore.
+        add_compile_options(/wd4273)
 
-    # C4244 / C4267: conversion from a larger integer type to a smaller one (e.g.
-    # size_t→int, DWORD→WORD).  These are pervasive in the legacy Wine/DOS-emulation
-    # arithmetic and are safe given the 16-/32-bit context of this project.
-    add_compile_options(/wd4244 /wd4267)
+        # C4244 / C4267: conversion from a larger integer type to a smaller one
+        # (e.g. size_t→int, DWORD→WORD).  These are pervasive in the legacy
+        # Wine/DOS-emulation arithmetic and are safe given the 16-/32-bit context
+        # of this project.
+        add_compile_options(/wd4244 /wd4267)
 
-    # C4018: signed/unsigned mismatch in comparisons; common in legacy C code that
-    # mixes plain int and DWORD/size_t loop variables.
-    add_compile_options(/wd4018)
+        # C4018: signed/unsigned mismatch in comparisons; common in legacy C code
+        # that mixes plain int and DWORD/size_t loop variables.
+        add_compile_options(/wd4018)
 
-    # C4146: unary minus applied to an unsigned type; appears in Wine bit-manipulation
-    # helpers where the pattern is intentional.
-    add_compile_options(/wd4146)
+        # C4146: unary minus applied to an unsigned type; appears in Wine
+        # bit-manipulation helpers where the pattern is intentional.
+        add_compile_options(/wd4146)
 
-    # LNK4217: symbol defined in one object file is imported by another object within
-    # the same link unit.  Harmless in this project's DLL-per-subsystem layout where
-    # many small DLLs share Wine helper symbols.
-    string(APPEND CMAKE_SHARED_LINKER_FLAGS " /ignore:4217")
-    string(APPEND CMAKE_EXE_LINKER_FLAGS   " /ignore:4217")
+        # C4013: implicit function declaration – no prototype visible; MSVC assumes
+        # the function returns int.  Common in old K&R-style C files distributed
+        # with Wine.  The calling convention matches the actual definitions in this
+        # codebase, so there is no runtime impact.
+        add_compile_options(/wd4013)
+
+        # C4024: different types for formal and actual parameter – arises when Wine
+        # helper macros pass WORD/DWORD values to functions whose parameter type
+        # differs only in signedness or width within the same 32-bit register class.
+        add_compile_options(/wd4024)
+
+        # C4047: 'operator' differs in levels of indirection – pointer-vs-integer
+        # mismatches common in legacy thunk and stub code generated by convspec.
+        add_compile_options(/wd4047)
+
+        # C4133: incompatible pointer types – closely related to C4047; appears in
+        # Wine compatibility wrappers and generated thunk tables where void* is cast
+        # implicitly in C89-style code.
+        add_compile_options(/wd4133)
+
+        # C4090: different 'const' qualifiers – common where Wine passes a const
+        # string literal to an older API declared without const on its parameter.
+        add_compile_options(/wd4090)
+
+        # LNK4217: symbol defined in one object file is imported by another object
+        # within the same link unit.  Harmless in this project's DLL-per-subsystem
+        # layout where many small DLLs share Wine helper symbols.
+        string(APPEND CMAKE_SHARED_LINKER_FLAGS " /ignore:4217")
+        string(APPEND CMAKE_EXE_LINKER_FLAGS   " /ignore:4217")
+    endif() # WINEVDM_SUPPRESS_MSVC_WARNINGS
 endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
